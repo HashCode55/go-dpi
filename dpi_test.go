@@ -45,7 +45,13 @@ func TestTelnetDetect(t *testing.T) {
 
 func TestHTTPDetect(t *testing.T) {
 	handle, _ := readPCAP("data/pcap/http.cap")
+	httpPackages := 0
 	for packet := range getPacketChan(handle) {
-		detectProtocol(packet)
+		if detectProtocol(packet) == 1 {
+			httpPackages++
+		}
+	}
+	if httpPackages != 9 {
+		t.Errorf("Expected 9 HTTP packages got %d", httpPackages)
 	}
 }
