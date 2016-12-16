@@ -12,29 +12,31 @@ import (
 	"github.com/google/gopacket/layers"
 )
 
-func sendNewPacket(payload *nfqueue.Payload, layers ...gopacket.SerializableLayer) {
+func sendNewPacket(payload *nfqueue.Payload, packetLayers ...gopacket.SerializableLayer) {
 	buffer := gopacket.NewSerializeBuffer()
-	gopacket.SerializeLayers(buffer, gopacket.SerializeOptions{FixLengths: true, ComputeChecksums: true}, layers...)
+	gopacket.SerializeLayers(
+		buffer,
+		gopacket.SerializeOptions{FixLengths: true, ComputeChecksums: true},
+		packetLayers...,
+	)
 	outgoingPacket := buffer.Bytes()
 	payload.SetVerdictModified(nfqueue.NF_ACCEPT, outgoingPacket)
 }
 
 func realCallback(payload *nfqueue.Payload) int {
 	packet := gopacket.NewPacket(payload.Data, layers.LayerTypeIPv4, gopacket.Default)
-	ethLayer := packet.Layer(layers.LayerTypeEthernet)
-	eth, _ := ethLayer.(*layers.Ethernet)
 	if ipLayer := packet.Layer(layers.LayerTypeIPv4); ipLayer != nil {
 		ip, _ := ipLayer.(*layers.IPv4)
 		if tcpLayer := packet.Layer(layers.LayerTypeTCP); tcpLayer != nil {
 			tcp, _ := tcpLayer.(*layers.TCP)
 			if tcp.DstPort == 8888 {
 				tcp.DstPort = 8000
-				sendNewPacket(payload, eth, ip, tcp)
+				sendNewPacket(payload, ip, tcp)
 				return 0
 			}
 			if tcp.SrcPort == 8000 {
 				tcp.SrcPort = 8888
-				sendNewPacket(payload, eth, ip, tcp)
+				sendNewPacket(payload, ip, tcp)
 				return 0
 			}
 		}
