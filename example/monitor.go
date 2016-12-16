@@ -12,6 +12,13 @@ import (
 	"github.com/google/gopacket/layers"
 )
 
+func sendNewPacket(payload *nfqueue.Payload, layers ...gopacket.SerializableLayer) {
+	buffer := gopacket.NewSerializeBuffer()
+	gopacket.SerializeLayers(buffer, gopacket.SerializeOptions{FixLengths: true, ComputeChecksums: true}, layers...)
+	outgoingPacket := buffer.Bytes()
+	payload.SetVerdictModified(nfqueue.NF_ACCEPT, outgoingPacket)
+}
+
 func realCallback(payload *nfqueue.Payload) int {
 	packet := gopacket.NewPacket(payload.Data, layers.LayerTypeIPv4, gopacket.Default)
 	ethLayer := packet.Layer(layers.LayerTypeEthernet)
@@ -22,20 +29,14 @@ func realCallback(payload *nfqueue.Payload) int {
 			tcp, _ := tcpLayer.(*layers.TCP)
 			if tcp.DstPort == 8888 {
 				tcp.DstPort = 8000
-				buffer := gopacket.NewSerializeBuffer()
-				gopacket.SerializeLayers(buffer, gopacket.SerializeOptions{FixLengths: true, ComputeChecksums: true},
-					eth,
-					ip,
-					tcp,
-					gopacket.Payload(tcp.Payload),
-				)
-				outgoingPacket := buffer.Bytes()
-				payload.SetVerdictModified(nfqueue.NF_ACCEPT, outgoingPacket)
+				sendNewPacket(payload, eth, ip, tcp)
 				return 0
 			}
-		}
-		if udpLayer := packet.Layer(layers.LayerTypeUDP); udpLayer != nil {
-			_, _ = udpLayer.(*layers.UDP)
+			if tcp.SrcPort == 8000 {
+				tcp.SrcPort = 8888
+				sendNewPacket(payload, eth, ip, tcp)
+				return 0
+			}
 		}
 	}
 	payload.SetVerdict(nfqueue.NF_ACCEPT)
@@ -48,6 +49,7 @@ func main() {
 		panic(err)
 	}
 	ipt.Append("filter", "INPUT", "-p", "tcp", "-j", "NFQUEUE", "--queue-num", "0")
+	ipt.Append("filter", "OUTPUT", "-p", "tcp", "-j", "NFQUEUE", "--queue-num", "0")
 	q := new(nfqueue.Queue)
 	q.SetCallback(realCallback)
 
@@ -65,6 +67,7 @@ func main() {
 			_ = sig
 			q.Close()
 			err = ipt.ClearChain("filter", "INPUT")
+			err = ipt.ClearChain("filter", "OUTPUT")
 			if err != nil {
 				panic(err)
 			}
